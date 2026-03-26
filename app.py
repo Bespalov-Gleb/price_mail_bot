@@ -5,6 +5,7 @@ import os
 import random
 import smtplib
 import ssl
+import shutil
 import tempfile
 from email.message import EmailMessage
 from pathlib import Path
@@ -110,7 +111,12 @@ def _mutate_price() -> tuple[bool, str]:
             new = 0.0
         ws[coord].value = new
 
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        PRICE_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".xlsx",
+            dir=str(PRICE_FILE_PATH.parent),
+        )
         tmp.close()
         wb.save(tmp.name)
         os.replace(tmp.name, str(PRICE_FILE_PATH))
@@ -206,15 +212,24 @@ async def on_document(message: Message):
         return
 
     async with file_lock:
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        PRICE_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".xlsx",
+            dir=str(PRICE_FILE_PATH.parent),
+        )
         tmp.close()
         try:
             await bot.download(doc, destination=tmp.name)
             wb = load_workbook(tmp.name)
             wb.close()
-            PRICE_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
             os.replace(tmp.name, str(PRICE_FILE_PATH))
         except Exception as e:
+            # fallback на случай edge-кейсов с разными FS
+            with contextlib.suppress(Exception):
+                shutil.move(tmp.name, str(PRICE_FILE_PATH))
+                await message.answer("✅ Файл обновлен. Таймер не сброшен.")
+                return
             with contextlib.suppress(Exception):
                 os.unlink(tmp.name)
             await message.answer(f"Ошибка загрузки/валидации: {e}")
