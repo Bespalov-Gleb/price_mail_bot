@@ -13,7 +13,8 @@ from pathlib import Path
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 from openpyxl import load_workbook
 
@@ -59,6 +60,13 @@ def _allowed(user_id: int) -> bool:
     if not ALLOWED_IDS:
         return True
     return user_id in ALLOWED_IDS
+
+
+def _menu_markup():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🧪 Тест: обновить и отправить", callback_data="test_tick")
+    kb.adjust(1)
+    return kb.as_markup()
 
 
 def _read_direction() -> int:
@@ -182,7 +190,8 @@ async def cmd_start(message: Message):
     await message.answer(
         "Готово.\n"
         "1) По таймеру меняю случайную цену на +/-1 RUB и отправляю файл на почту.\n"
-        "2) Пришли .xlsx файлом — обновлю серверный файл без сброса таймера."
+        "2) Пришли .xlsx файлом — обновлю серверный файл без сброса таймера.",
+        reply_markup=_menu_markup(),
     )
 
 
@@ -195,8 +204,22 @@ async def cmd_status(message: Message):
         f"Файл: {PRICE_FILE_PATH}\n"
         f"Есть: {'да' if PRICE_FILE_PATH.exists() else 'нет'}\n"
         f"Интервал: {max(30, PRICE_MAIL_INTERVAL_SECONDS)} сек\n"
-        f"Почта: {EMAIL_TO or '-'}"
+        f"Почта: {EMAIL_TO or '-'}",
+        reply_markup=_menu_markup(),
     )
+
+
+@router.callback_query(F.data == "test_tick")
+async def cb_test_tick(cb: CallbackQuery):
+    if not _allowed(cb.from_user.id):
+        await cb.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await cb.answer("Запускаю тест...", show_alert=False)
+    try:
+        await _tick()
+        await cb.message.answer("✅ Тест выполнен: файл обновлен и отправлен на почту.")
+    except Exception as e:
+        await cb.message.answer(f"❌ Ошибка теста: {e}")
 
 
 @router.message(F.document)
